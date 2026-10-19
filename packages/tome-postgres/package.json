@@ -1,0 +1,21 @@
+{
+  "name": "tome-postgres",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tome-graph-interfaces": "workspace:*",
+    "tome-service-interfaces": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.23",
+    "typescript": "5.8.2"
+  }
+}

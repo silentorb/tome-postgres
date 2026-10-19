@@ -1,0 +1,28 @@
+# Official Postgres for local tome-postgres tests.
+# URI: postgres://tome:tome-postgres-dev@localhost:5432/tome
+# Auth (dev default): tome / tome-postgres-dev
+
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tome}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tome-postgres-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-tome}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-tome} -d ${POSTGRES_DB:-tome}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  postgres_data:

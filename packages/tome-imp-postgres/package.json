@@ -1,0 +1,24 @@
+{
+  "name": "tome-imp-postgres",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun run typecheck && bun test tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "imp-collection-transforms": "workspace:^0.5.0",
+    "imp-core-types": "workspace:^0.5.0",
+    "imp-pathing": "workspace:^0.6.0",
+    "imp-registry": "workspace:^0.5.0",
+    "imp-sql": "workspace:^0.7.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.23",
+    "typescript": "5.8.2"
+  }
+}

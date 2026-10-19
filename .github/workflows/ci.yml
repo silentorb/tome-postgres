@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: tome
+          POSTGRES_PASSWORD: tome-postgres-dev
+          POSTGRES_DB: tome
+        options: >-
+          --health-cmd "pg_isready -U tome -d tome"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 10s
+
+    env:
+      POSTGRES_URI: postgres://tome:tome-postgres-dev@localhost:5432/tome
+
+    steps:
+      - name: Checkout tome-postgres
+        uses: actions/checkout@v4
+        with:
+          path: tome-postgres
+
+      - name: Checkout tome
+        uses: actions/checkout@v4
+        with:
+          repository: silentorb/tome
+          path: tome
+          ref: ${{ vars.TOME_REF || 'main' }}
+
+      - name: Checkout imp-ts
+        uses: actions/checkout@v4
+        with:
+          repository: silentorb/imp-ts
+          path: imp-ts
+          ref: ${{ vars.IMP_TS_REF || 'main' }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Install
+        working-directory: tome-postgres
+        run: bun install
+
+      - name: Typecheck and test
+        working-directory: tome-postgres
+        run: bun test

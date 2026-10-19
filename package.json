@@ -1,0 +1,16 @@
+{
+  "name": "tome-postgres-workspace",
+  "private": true,
+  "packageManager": "bun@1.3.13",
+  "workspaces": [
+    "packages/*",
+    "../tome/packages/tome-graph-interfaces",
+    "../tome/packages/tome-service-interfaces",
+    "../imp-ts/packages/*"
+  ],
+  "scripts": {
+    "typecheck": "bun run --filter './packages/*' typecheck",
+    "test": "bun run typecheck && bun test"
+  },
+  "devDependencies": {}
+}
