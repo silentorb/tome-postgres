@@ -90,7 +90,6 @@ function relationFieldExistsSql(
 
 /**
  * Lower Intent sort keys and relation display fields into a Postgres expression catalog.
- * Expression-index sorts are refused (Q1 — no expression_index tables).
  */
 export function bindExpressions(intent: MembershipQueryIntent): ExprCatalog {
   const sorts = new Map<string, BoundExpr>();
@@ -110,9 +109,11 @@ export function bindExpressions(intent: MembershipQueryIntent): ExprCatalog {
 
     const exprEntry = intent.expressionIndexSorts.find((r) => r.column === col);
     if (exprEntry && /^[a-f0-9]{16,64}$/i.test(exprEntry.digest.trim())) {
-      throw new Error(
-        `tome-postgres Q1: expression-index sort for column "${col}" is not implemented`,
-      );
+      sorts.set(col, {
+        sql: `COALESCE((SELECT eiv.sort_value FROM expression_index_values eiv WHERE eiv.digest = ? AND eiv.member_id = ${MEMBER_ID_TOKEN}), 0)`,
+        params: [exprEntry.digest.trim()],
+      });
+      continue;
     }
 
     const relationEntry = intent.relationCounts.find((r) => r.column === col);

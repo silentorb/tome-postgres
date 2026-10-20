@@ -69,6 +69,24 @@ export async function ensureSchema(client: Client): Promise<void> {
       document JSONB NOT NULL,
       PRIMARY KEY (corpus_id, kind)
     );
+
+    CREATE TABLE IF NOT EXISTS expression_indexes (
+      digest TEXT PRIMARY KEY NOT NULL,
+      status TEXT NOT NULL,
+      built_at TEXT,
+      expression_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      dirty_member_ids JSONB
+    );
+
+    CREATE TABLE IF NOT EXISTS expression_index_values (
+      digest TEXT NOT NULL REFERENCES expression_indexes(digest) ON DELETE CASCADE,
+      member_id TEXT NOT NULL,
+      sort_value DOUBLE PRECISION NOT NULL,
+      PRIMARY KEY (digest, member_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_expression_index_sort
+      ON expression_index_values (digest, sort_value);
   `);
 
   await client.query(`
@@ -84,7 +102,15 @@ export async function ensureSchema(client: Client): Promise<void> {
  */
 export async function truncateSchema(client: Client): Promise<void> {
   await client.query(`
-    TRUNCATE TABLE relationship_projections, relationship_records, nodes, meta, model_documents CASCADE;
+    TRUNCATE TABLE
+      expression_index_values,
+      expression_indexes,
+      relationship_projections,
+      relationship_records,
+      nodes,
+      meta,
+      model_documents
+    CASCADE;
   `);
   await client.query(`
     INSERT INTO corpora (id, access, content_label)

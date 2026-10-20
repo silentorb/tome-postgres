@@ -17,7 +17,7 @@ async function canConnect(): Promise<boolean> {
 
 const live = await canConnect();
 
-describe.skipIf(!live)("tome-postgres product query (Q1)", () => {
+describe.skipIf(!live)("tome-postgres product query (Q2)", () => {
   test("listMemberPage total, limit/offset, and title sort", async () => {
     const mod = createPostgresModule();
     const cache = await mod.open({ clean: true });
@@ -169,28 +169,148 @@ describe.skipIf(!live)("tome-postgres product query (Q1)", () => {
     }
   });
 
-  test("expression-index sort refuses clearly", async () => {
+  test("expression-index sort orders by digest values", async () => {
     const mod = createPostgresModule();
     const cache = await mod.open({ clean: true });
     try {
       await cache.upsertNode("set1", { title: "Set" });
-      await cache.upsertNode("m1", { title: "M" });
+      await cache.upsertNode("m1", { title: "One" });
+      await cache.upsertNode("m2", { title: "Two" });
+      await cache.upsertNode("m3", { title: "Three" });
       await cache.upsertRelationship("set1", "m1", "member:0", {});
+      await cache.upsertRelationship("set1", "m2", "member:0", {});
+      await cache.upsertRelationship("set1", "m3", "member:0", {});
 
-      await expect(
-        cache.listMemberPage("set1", {
-          projections: [
-            { setProjection: "member:0", memberProjection: "member:1" },
-          ],
-          sorts: [{ column: "dynCol", direction: "asc" }],
-          expressionIndexSorts: [
-            {
-              column: "dynCol",
-              digest: "abcdef0123456789abcdef0123456789",
-            },
-          ],
-        }),
-      ).rejects.toThrow(/expression-index sort/);
+      const digest = "abcdef0123456789abcdef0123456789";
+      await cache.replaceExpressionIndexValues(digest, "{}", [
+        { memberId: "m1", sortValue: 10 },
+        { memberId: "m2", sortValue: 50 },
+        { memberId: "m3", sortValue: 1 },
+      ]);
+      expect(await cache.getExpressionIndexStatus(digest)).toBe("ready");
+
+      const page = await cache.listMemberPage("set1", {
+        projections: [
+          { setProjection: "member:0", memberProjection: "member:1" },
+        ],
+        sorts: [{ column: "dynCol", direction: "desc" }],
+        expressionIndexSorts: [{ column: "dynCol", digest }],
+        limit: 2,
+        offset: 0,
+      });
+      expect(page.relationships.map((r) => r.sourceNodeId)).toEqual([
+        "m2",
+        "m1",
+      ]);
+
+      await cache.upsertRelationship("set1", "m3", "member:0", { order: "9" });
+      expect(await cache.getExpressionIndexStatus(digest)).toBe("stale");
+    } finally {
+      await cache.close();
+    }
+  });
+
+  test("marks only digests whose reachTypes intersect the mutated type", async () => {
+    const mod = createPostgresModule();
+    const cache = await mod.open({ clean: true });
+    try {
+      const digestA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+      const digestB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+      await cache.replaceExpressionIndexValues(
+        digestA,
+        JSON.stringify({ reachTypes: ["typeA", "assocSet:0"] }),
+        [{ memberId: "m1", sortValue: 1 }],
+      );
+      await cache.replaceExpressionIndexValues(
+        digestB,
+        JSON.stringify({ reachTypes: ["typeB"] }),
+        [{ memberId: "m1", sortValue: 2 }],
+      );
+      expect(await cache.getExpressionIndexStatus(digestA)).toBe("ready");
+      expect(await cache.getExpressionIndexStatus(digestB)).toBe("ready");
+
+      await cache.markExpressionIndexesStaleForTypes(["typeA"], ["m1", "other"]);
+      expect(await cache.getExpressionIndexStatus(digestA)).toBe("stale");
+      expect(await cache.getExpressionIndexStatus(digestB)).toBe("ready");
+      expect(
+        (await cache.getExpressionIndexDirtyMemberIds(digestA))?.sort(),
+      ).toEqual(["m1", "other"]);
+      expect(await cache.getExpressionIndexDirtyMemberIds(digestB)).toBeNull();
+    } finally {
+      await cache.close();
+    }
+  });
+
+  test("upserts expression index values without wiping siblings", async () => {
+    const mod = createPostgresModule();
+    const cache = await mod.open({ clean: true });
+    try {
+      const digest = "cccccccccccccccccccccccccccccccc";
+      await cache.replaceExpressionIndexValues(
+        digest,
+        JSON.stringify({ reachTypes: ["t"] }),
+        [
+          { memberId: "m1", sortValue: 10 },
+          { memberId: "m2", sortValue: 50 },
+        ],
+      );
+      await cache.markExpressionIndexesStaleForTypes(["t"], ["m1"]);
+      expect(await cache.getExpressionIndexStatus(digest)).toBe("stale");
+
+      await cache.upsertExpressionIndexValues(
+        digest,
+        JSON.stringify({ reachTypes: ["t"] }),
+        [{ memberId: "m1", sortValue: 99 }],
+      );
+      expect(await cache.getExpressionIndexStatus(digest)).toBe("ready");
+      expect(await cache.getExpressionIndexDirtyMemberIds(digest)).toBeNull();
+
+      const rows = await cache.queryAll<{
+        member_id: string;
+        sort_value: number;
+      }>(
+        "SELECT member_id, sort_value FROM expression_index_values WHERE digest = $1 ORDER BY member_id",
+        digest,
+      );
+      expect(rows).toEqual([
+        { member_id: "m1", sort_value: 99 },
+        { member_id: "m2", sort_value: 50 },
+      ]);
+
+      await cache.deleteExpressionIndexValues(digest, ["m2"]);
+      const afterDelete = await cache.queryAll<{ member_id: string }>(
+        "SELECT member_id FROM expression_index_values WHERE digest = $1",
+        digest,
+      );
+      expect(afterDelete).toEqual([{ member_id: "m1" }]);
+    } finally {
+      await cache.close();
+    }
+  });
+
+  test("global markExpressionIndexesStale clears dirty_member_ids", async () => {
+    const mod = createPostgresModule();
+    const cache = await mod.open({ clean: true });
+    try {
+      const digest = "dddddddddddddddddddddddddddddddd";
+      await cache.replaceExpressionIndexValues(
+        digest,
+        JSON.stringify({ reachTypes: ["t"] }),
+        [{ memberId: "m1", sortValue: 1 }],
+      );
+      await cache.markExpressionIndexesStaleForTypes(["t"], ["m1"]);
+      expect(await cache.getExpressionIndexDirtyMemberIds(digest)).toEqual([
+        "m1",
+      ]);
+
+      await cache.upsertExpressionIndexValues(
+        digest,
+        JSON.stringify({ reachTypes: ["t"] }),
+        [{ memberId: "m1", sortValue: 2 }],
+      );
+      await cache.markExpressionIndexesStale();
+      expect(await cache.getExpressionIndexStatus(digest)).toBe("stale");
+      expect(await cache.getExpressionIndexDirtyMemberIds(digest)).toBeNull();
     } finally {
       await cache.close();
     }

@@ -6,7 +6,7 @@ Postgres adapters for Tome as **store modules** loaded via `dataStores` (same se
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `openPostgresGraphStore` Queryable Base (single SoT + model documents + archive flag + solo corpus); thin `createPostgresModule` with product query Q1 windows — **no full cache / CacheSync** |
+| `packages/tome-postgres` | `openPostgresGraphStore` Queryable Base (single SoT + model documents + archive flag + solo corpus); thin `createPostgresModule` with product query Q2 windows + expression indexes — **no full cache / CacheSync** |
 | `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — binder via `imp-sql` `compilePostgres` against projection mirrors |
 
 ## Cross-adapter uniformity (LCD, nice-to-have)

@@ -13,6 +13,15 @@ import {
   writeRelationshipFromProjection,
 } from "./relationship-write";
 import {
+  deleteExpressionIndexValues,
+  getExpressionIndexDirtyMemberIds,
+  getExpressionIndexStatus,
+  markExpressionIndexesStale,
+  markExpressionIndexesStaleForTypes,
+  replaceExpressionIndexValues,
+  upsertExpressionIndexValues,
+} from "./expression-index";
+import {
   buildMembershipCte,
   buildOutgoingProjectionOrderBy,
   compileMemberPage,
@@ -153,7 +162,11 @@ export async function openPostgresCache(
     async deleteNode(id) {
       assertOpen();
       const result = await client.query(`DELETE FROM nodes WHERE id = $1`, [id]);
-      return (result.rowCount ?? 0) > 0;
+      const deleted = (result.rowCount ?? 0) > 0;
+      if (deleted) {
+        await markExpressionIndexesStale(client);
+      }
+      return deleted;
     },
 
     async isNodeArchived(id) {
@@ -170,6 +183,7 @@ export async function openPostgresCache(
       await client.query(
         `TRUNCATE TABLE relationship_projections, relationship_records CASCADE`,
       );
+      await markExpressionIndexesStale(client);
     },
 
     async upsertRelationshipRecord(_record) {
@@ -189,10 +203,24 @@ export async function openPostgresCache(
         type,
         properties,
       );
+      await markExpressionIndexesStaleForTypes(
+        client,
+        [type],
+        [sourceNodeId, targetNodeId],
+      );
     },
 
     async mergeRelationshipProperties(id, properties) {
       assertOpen();
+      const existing = await client.query<{
+        source_node_id: string;
+        target_node_id: string;
+        type: string;
+      }>(
+        `SELECT source_node_id, target_node_id, type
+         FROM relationship_projections WHERE id = $1`,
+        [id],
+      );
       await client.query(
         `UPDATE relationship_projections
          SET properties = properties || $2::jsonb
@@ -206,16 +234,32 @@ export async function openPostgresCache(
          WHERE p.id = $1 AND p.record_id = r.id`,
         [id, JSON.stringify(properties)],
       );
+      const row = existing.rows[0];
+      if (row) {
+        await markExpressionIndexesStaleForTypes(
+          client,
+          [row.type],
+          [row.source_node_id, row.target_node_id],
+        );
+      }
     },
 
     async deleteRelationship(sourceNodeId, targetNodeId, type) {
       assertOpen();
-      return deleteRelationshipFromProjection(
+      const deleted = await deleteRelationshipFromProjection(
         client,
         sourceNodeId,
         targetNodeId,
         type,
       );
+      if (deleted) {
+        await markExpressionIndexesStaleForTypes(
+          client,
+          [type],
+          [sourceNodeId, targetNodeId],
+        );
+      }
+      return deleted;
     },
 
     async getRelationshipRecord(_id) {
@@ -608,26 +652,33 @@ export async function openPostgresCache(
       }));
     },
 
-    async getExpressionIndexStatus(_digest) {
-      notImplemented("getExpressionIndexStatus");
+    async getExpressionIndexStatus(digest) {
+      assertOpen();
+      return getExpressionIndexStatus(client, digest);
     },
-    async replaceExpressionIndexValues(_digest, _expressionJson, _values) {
-      notImplemented("replaceExpressionIndexValues");
+    async replaceExpressionIndexValues(digest, expressionJson, values) {
+      assertOpen();
+      await replaceExpressionIndexValues(client, digest, expressionJson, values);
     },
-    async upsertExpressionIndexValues(_digest, _expressionJson, _values) {
-      notImplemented("upsertExpressionIndexValues");
+    async upsertExpressionIndexValues(digest, expressionJson, values) {
+      assertOpen();
+      await upsertExpressionIndexValues(client, digest, expressionJson, values);
     },
-    async deleteExpressionIndexValues(_digest, _memberIds) {
-      notImplemented("deleteExpressionIndexValues");
+    async deleteExpressionIndexValues(digest, memberIds) {
+      assertOpen();
+      await deleteExpressionIndexValues(client, digest, memberIds);
     },
-    async getExpressionIndexDirtyMemberIds(_digest) {
-      notImplemented("getExpressionIndexDirtyMemberIds");
+    async getExpressionIndexDirtyMemberIds(digest) {
+      assertOpen();
+      return getExpressionIndexDirtyMemberIds(client, digest);
     },
-    async markExpressionIndexesStale(_digest?) {
-      notImplemented("markExpressionIndexesStale");
+    async markExpressionIndexesStale(digest?) {
+      assertOpen();
+      await markExpressionIndexesStale(client, digest);
     },
-    async markExpressionIndexesStaleForTypes(_types, _dirtyMemberIds?) {
-      notImplemented("markExpressionIndexesStaleForTypes");
+    async markExpressionIndexesStaleForTypes(types, dirtyMemberIds?) {
+      assertOpen();
+      await markExpressionIndexesStaleForTypes(client, types, dirtyMemberIds);
     },
 
     async listComposedGroupHeaders(query) {
