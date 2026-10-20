@@ -9,8 +9,8 @@ export interface CompiledTomeImpPostgresSql {
 }
 
 /**
- * Lower an Imp graph against the provisional Tome Postgres relational schema.
- * Translation only — does not execute against a live database.
+ * Lower an Imp graph against the Tome Postgres SoT relational schema
+ * (`nodes` + `relationship_projections`). Translation only — does not execute.
  */
 export function compileImpGraphToTomePostgresSql(
   graph: Graph,

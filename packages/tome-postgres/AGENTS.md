@@ -2,25 +2,27 @@
 
 ## What it is
 
-Postgres store-module package for Tome (`createPostgresModule`). Opens a thin `pg`-backed `TomeQueryCache` against a provisional `nodes` / `relationships` schema (upsert + `queryAll` / `runExec`). SQLite-shaped cache APIs (membership pages, expression indexes, etc.) and authoritative Base store remain unimplemented (throw). Imp → SQL compile lives in sibling package `tome-imp-postgres`. Loaded via `tome-server` `dataStores` when configured — not an `extensions.json` kind.
+Postgres store package for Tome. Primary entry: `openPostgresGraphStore` — authoritative **Queryable Base** against a **single SQL SoT** (nodes + `relationship_records` + same-DB `relationship_projections` mirrors for Imp). Thin `createPostgresModule` opens an Imp/test pipe over the same tables — **not** a product cache and not full `TomeQueryCache` parity. Imp → SQL compile lives in sibling package `tome-imp-postgres`. Loaded via `tome-server` `dataStores` when configured — not an `extensions.json` kind.
 
 ## Connection
 
-`open()` resolves URI from `options.connectionString` / `options.uri` or `POSTGRES_URI`. Optional `clean: true` truncates provisional tables after DDL.
+`open()` / `openPostgresGraphStore` resolve URI from `options.connectionString` / `options.uri` or `POSTGRES_URI`. Optional `clean: true` truncates SoT tables after DDL.
 
 ## Dependency rules
 
-- May depend on `tome-graph-interfaces`, `tome-service-interfaces`, and `pg`
+- May depend on `tome-graph-interfaces`, `tome-service-interfaces`, `tome-imp-postgres`, `imp-core-types`, and `pg`
 - Must **not** import content loaders or codecs from `tome-db` / `tome-flatfile` unless a later design explicitly needs them
-- Binder (`tome-imp-postgres`) is a **devDependency** for connectivity tests only
 
 ## Layout
 
 | File | Contents |
 | --- | --- |
-| `src/module.ts` | `createPostgresModule()` |
-| `src/cache.ts` | Thin `openPostgresCache` |
-| `src/schema.ts` | Provisional DDL |
+| `src/module.ts` | `createPostgresModule()` thin Imp/test pipe |
+| `src/graph-store.ts` | `openPostgresGraphStore` Queryable Base |
+| `src/cache.ts` | Thin SoT query handle (compat) |
+| `src/schema.ts` | Single-SoT DDL |
+| `src/relationship-expand.ts` | Record → dual projection expand |
+| `src/relationship-write.ts` | Record/projection write helpers |
 | `src/resolve-connection.ts` | URI + redacted path |
 | `src/index.ts` | Public exports |
 
@@ -30,7 +32,7 @@ Postgres store-module package for Tome (`createPostgresModule`). Opens a thin `p
 bun test   # from this package or repo root
 ```
 
-Connectivity tests need Postgres (`docker compose` at repo root or CI service) and `POSTGRES_URI`. Smoke + binder compile tests do not.
+Live Base / connectivity tests need Postgres (`docker compose` at repo root or CI service) and `POSTGRES_URI`. Smoke + binder compile tests do not.
 
 ## See also
 

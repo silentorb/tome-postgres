@@ -7,7 +7,7 @@ import {
 
 /**
  * Postgres store module for Tome `dataStores` wiring.
- * Thin connectivity handle — not full SQLite `TomeQueryCache` parity.
+ * Thin Imp/test pipe over the single SoT — not a product cache path.
  */
 export function createPostgresModule(): TomeCacheModule {
   return {

@@ -1,6 +1,6 @@
 /**
- * Provisional Tome Postgres relational schema for Imp → SQL.
- * Not a committed store contract — revise when Postgres CRUD lands.
+ * Tome Postgres relational schema for Imp → SQL against the single SoT.
+ * Edges target relationship_projections (write mirrors of relationship_records).
  */
 
 import type { RelationalSchema } from "imp-sql"
@@ -8,14 +8,17 @@ import type { RelationalSchema } from "imp-sql"
 const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 const ASSOCIATION_ID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/
 
-/** Provisional nodes table for Tome design/identity nodes in Postgres. */
+/** Nodes table for Tome design/identity nodes in Postgres. */
 export const TOME_POSTGRES_NODES_TABLE = "nodes"
 
-/** Provisional relationships table. */
-export const TOME_POSTGRES_RELATIONSHIPS_TABLE = "relationships"
+/**
+ * Directed edge table for Imp traverse (projection mirrors).
+ * Canonical SoT rows live in `relationship_records`.
+ */
+export const TOME_POSTGRES_RELATIONSHIPS_TABLE = "relationship_projections"
 
 /**
- * Encode a directed relationship-type hop as a `relationships.type` value
+ * Encode a directed relationship-type hop as a projection `type` value
  * (`{relationshipTypeId}:0` or `{relationshipTypeId}:1`).
  */
 export function relationshipType(relationshipTypeId: string, direction: 0 | 1): string {
@@ -30,7 +33,7 @@ export function relationshipType(relationshipTypeId: string, direction: 0 | 1): 
   return `${id}:${direction}`
 }
 
-/** Map logical Imp column names onto provisional `nodes` (id column + jsonb properties). */
+/** Map logical Imp column names onto `nodes` (id column + jsonb properties). */
 export function tomePostgresNodesColumnExpression(name: string): string {
   if (!IDENT_RE.test(name)) {
     throw new Error(`Invalid column name "${name}"`)
@@ -42,7 +45,7 @@ export function tomePostgresNodesColumnExpression(name: string): string {
   return `(properties->>'${name}')`
 }
 
-/** Map logical edge property names onto provisional `relationships.properties` jsonb. */
+/** Map logical edge property names onto projection `properties` jsonb. */
 export function tomePostgresEdgePropertyExpression(alias: string, name: string): string {
   if (!IDENT_RE.test(alias)) {
     throw new Error(`Invalid edges alias "${alias}"`)
@@ -54,9 +57,9 @@ export function tomePostgresEdgePropertyExpression(alias: string, name: string):
 }
 
 /**
- * Imp RelationalSchema for provisional Tome Postgres storage:
+ * Imp RelationalSchema for Tome Postgres SoT:
  * - Nodes: `nodes` with `id` + `properties` jsonb
- * - Relationships: type = `{ULID}:{direction}`; direction selects hop packing only
+ * - Edges: `relationship_projections`; type = `{ULID}:{direction}`
  */
 export function createTomePostgresSchema(): RelationalSchema {
   return {
@@ -91,5 +94,5 @@ export function createTomePostgresSchema(): RelationalSchema {
   }
 }
 
-/** Default provisional schema instance. */
+/** Default schema instance. */
 export const tomePostgresSchema = createTomePostgresSchema()

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import type { Node, Properties, Relationship } from "tome-graph-interfaces";
 import type {
@@ -7,6 +6,10 @@ import type {
 } from "tome-service-interfaces";
 import { redactedPostgresPath } from "./resolve-connection";
 import { ensureSchema, truncateSchema } from "./schema";
+import {
+  deleteRelationshipFromProjection,
+  writeRelationshipFromProjection,
+} from "./relationship-write";
 
 export type OpenPostgresCacheOptions = {
   connectionString: string;
@@ -25,8 +28,8 @@ function asProperties(value: unknown): Properties {
 }
 
 /**
- * Open a thin Postgres-backed query handle for connectivity / Imp SQL execution.
- * Implements a subset of {@link TomeQueryCache}; other methods throw.
+ * Open a thin Postgres Imp/test pipe over the same SoT tables as the Base store.
+ * Not a product cache path — not full `TomeQueryCache` parity.
  */
 export async function openPostgresCache(
   options: OpenPostgresCacheOptions,
@@ -123,13 +126,20 @@ export async function openPostgresCache(
       return (result.rowCount ?? 0) > 0;
     },
 
-    async isNodeArchived(_id) {
-      return false;
+    async isNodeArchived(id) {
+      assertOpen();
+      const result = await client.query<{ is_archived: boolean }>(
+        `SELECT is_archived FROM nodes WHERE id = $1`,
+        [id],
+      );
+      return result.rows[0]?.is_archived === true;
     },
 
     async clearRelationshipCache() {
       assertOpen();
-      await client.query(`TRUNCATE TABLE relationships`);
+      await client.query(
+        `TRUNCATE TABLE relationship_projections, relationship_records CASCADE`,
+      );
     },
 
     async upsertRelationshipRecord(_record) {
@@ -142,39 +152,40 @@ export async function openPostgresCache(
 
     async upsertRelationship(sourceNodeId, targetNodeId, type, properties = {}) {
       assertOpen();
-      await client.query(
-        `INSERT INTO relationships (id, source_node_id, target_node_id, type, properties)
-         VALUES ($1, $2, $3, $4, $5::jsonb)
-         ON CONFLICT (source_node_id, target_node_id, type) DO UPDATE SET
-           properties = EXCLUDED.properties`,
-        [
-          randomUUID(),
-          sourceNodeId,
-          targetNodeId,
-          type,
-          JSON.stringify(properties),
-        ],
+      await writeRelationshipFromProjection(
+        client,
+        sourceNodeId,
+        targetNodeId,
+        type,
+        properties,
       );
     },
 
     async mergeRelationshipProperties(id, properties) {
       assertOpen();
       await client.query(
-        `UPDATE relationships
+        `UPDATE relationship_projections
          SET properties = properties || $2::jsonb
          WHERE id = $1`,
+        [id, JSON.stringify(properties)],
+      );
+      await client.query(
+        `UPDATE relationship_records r
+         SET properties = r.properties || $2::jsonb
+         FROM relationship_projections p
+         WHERE p.id = $1 AND p.record_id = r.id`,
         [id, JSON.stringify(properties)],
       );
     },
 
     async deleteRelationship(sourceNodeId, targetNodeId, type) {
       assertOpen();
-      const result = await client.query(
-        `DELETE FROM relationships
-         WHERE source_node_id = $1 AND target_node_id = $2 AND type = $3`,
-        [sourceNodeId, targetNodeId, type],
+      return deleteRelationshipFromProjection(
+        client,
+        sourceNodeId,
+        targetNodeId,
+        type,
       );
-      return (result.rowCount ?? 0) > 0;
     },
 
     async getRelationshipRecord(_id) {
@@ -185,13 +196,14 @@ export async function openPostgresCache(
       assertOpen();
       const result = await client.query<{
         id: string;
+        record_id: string;
         source_node_id: string;
         target_node_id: string;
         type: string;
         properties: unknown;
       }>(
-        `SELECT id, source_node_id, target_node_id, type, properties
-         FROM relationships WHERE id = $1`,
+        `SELECT id, record_id, source_node_id, target_node_id, type, properties
+         FROM relationship_projections WHERE id = $1`,
         [id],
       );
       const row = result.rows[0];
@@ -202,6 +214,7 @@ export async function openPostgresCache(
         targetNodeId: row.target_node_id,
         type: row.type,
         properties: asProperties(row.properties),
+        recordId: row.record_id,
       };
     },
 
@@ -219,7 +232,7 @@ export async function openPostgresCache(
         `SELECT COUNT(*)::text AS n FROM nodes`,
       );
       const relationships = await client.query<{ n: string }>(
-        `SELECT COUNT(*)::text AS n FROM relationships`,
+        `SELECT COUNT(*)::text AS n FROM relationship_projections`,
       );
       return {
         nodes: Number(nodes.rows[0]?.n ?? 0),
@@ -262,24 +275,27 @@ export async function openPostgresCache(
       const result = type
         ? await client.query<{
             id: string;
+            record_id: string;
             source_node_id: string;
             target_node_id: string;
             type: string;
             properties: unknown;
           }>(
-            `SELECT id, source_node_id, target_node_id, type, properties
-             FROM relationships WHERE source_node_id = $1 AND type = $2`,
+            `SELECT id, record_id, source_node_id, target_node_id, type, properties
+             FROM relationship_projections
+             WHERE source_node_id = $1 AND type = $2`,
             [sourceNodeId, type],
           )
         : await client.query<{
             id: string;
+            record_id: string;
             source_node_id: string;
             target_node_id: string;
             type: string;
             properties: unknown;
           }>(
-            `SELECT id, source_node_id, target_node_id, type, properties
-             FROM relationships WHERE source_node_id = $1`,
+            `SELECT id, record_id, source_node_id, target_node_id, type, properties
+             FROM relationship_projections WHERE source_node_id = $1`,
             [sourceNodeId],
           );
       return result.rows.map((row) => ({
@@ -288,6 +304,7 @@ export async function openPostgresCache(
         targetNodeId: row.target_node_id,
         type: row.type,
         properties: asProperties(row.properties),
+        recordId: row.record_id,
       }));
     },
     async listRelationshipsToTarget(targetNodeId, type?) {
@@ -295,24 +312,27 @@ export async function openPostgresCache(
       const result = type
         ? await client.query<{
             id: string;
+            record_id: string;
             source_node_id: string;
             target_node_id: string;
             type: string;
             properties: unknown;
           }>(
-            `SELECT id, source_node_id, target_node_id, type, properties
-             FROM relationships WHERE target_node_id = $1 AND type = $2`,
+            `SELECT id, record_id, source_node_id, target_node_id, type, properties
+             FROM relationship_projections
+             WHERE target_node_id = $1 AND type = $2`,
             [targetNodeId, type],
           )
         : await client.query<{
             id: string;
+            record_id: string;
             source_node_id: string;
             target_node_id: string;
             type: string;
             properties: unknown;
           }>(
-            `SELECT id, source_node_id, target_node_id, type, properties
-             FROM relationships WHERE target_node_id = $1`,
+            `SELECT id, record_id, source_node_id, target_node_id, type, properties
+             FROM relationship_projections WHERE target_node_id = $1`,
             [targetNodeId],
           );
       return result.rows.map((row) => ({
@@ -321,6 +341,7 @@ export async function openPostgresCache(
         targetNodeId: row.target_node_id,
         type: row.type,
         properties: asProperties(row.properties),
+        recordId: row.record_id,
       }));
     },
     async listOutgoingProjectionTypes(_sourceNodeId) {
@@ -378,7 +399,7 @@ export async function openPostgresCache(
     async countIncidentRelationships(nodeId) {
       assertOpen();
       const result = await client.query<{ n: string }>(
-        `SELECT COUNT(*)::text AS n FROM relationships
+        `SELECT COUNT(*)::text AS n FROM relationship_projections
          WHERE source_node_id = $1 OR target_node_id = $1`,
         [nodeId],
       );
@@ -387,7 +408,7 @@ export async function openPostgresCache(
     async listDistinctRelationshipTypes() {
       assertOpen();
       const result = await client.query<{ type: string }>(
-        `SELECT DISTINCT type FROM relationships ORDER BY type`,
+        `SELECT DISTINCT type FROM relationship_projections ORDER BY type`,
       );
       return result.rows.map((row) => row.type);
     },

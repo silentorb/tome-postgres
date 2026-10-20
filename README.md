@@ -2,14 +2,14 @@
 
 Postgres backend packages for [Tome](https://github.com/silentorb/tome). This repo **depends on Tome** (interfaces / store module contracts) and **[imp-ts](https://github.com/silentorb/imp-ts)** (`imp-sql`) for Imp → SQL — Tome does **not** depend on this repo. Hosts load adapters via `tome-server` `dataStores` when configured.
 
-Heavy Postgres runtime and CI live here so tome’s light weighted test suite stays lean. Imp → SQL compile tests do not need a live database; connectivity tests do (`POSTGRES_URI`).
+Heavy Postgres runtime and CI live here so tome’s light weighted test suite stays lean. Imp → SQL compile tests do not need a live database; Base / connectivity tests do (`POSTGRES_URI`).
 
 ## Packages
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `createPostgresModule` — thin `pg` cache handle (provisional schema upsert + `queryAll`); not full SQLite cache / Base parity |
-| `packages/tome-imp-postgres` | Thin Tome binder: Imp → SQL via `compilePostgres` against provisional Postgres schema |
+| `packages/tome-postgres` | `openPostgresGraphStore` — Queryable Base on a **single SQL SoT** (records + projection mirrors); thin `createPostgresModule` Imp/test pipe. **No full SQLite-style cache.** |
+| `packages/tome-imp-postgres` | Thin Tome binder: Imp → SQL via `compilePostgres` against `relationship_projections` |
 
 ## Layout (workbench)
 
@@ -56,7 +56,7 @@ export POSTGRES_URI=postgres://tome:tome-postgres-dev@localhost:5432/tome
 bun test
 ```
 
-Without `POSTGRES_URI` (or when unreachable), connectivity tests skip; compile + smoke still run.
+Without `POSTGRES_URI` (or when unreachable), live Base / connectivity tests skip; compile + smoke still run.
 
 From silentorb-workbench: `bash scripts/run-in-tome-postgres.sh run test` (when mounted; set `POSTGRES_URI` for live tests).
 

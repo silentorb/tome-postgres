@@ -6,8 +6,8 @@ Postgres adapters for Tome as **store modules** loaded via `dataStores` (same se
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `createPostgresModule()` — thin `pg` handle (provisional DDL, node/rel upsert, `queryAll`); not full `TomeQueryCache` / Base parity |
-| `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — provisional schema binder via `imp-sql` `compilePostgres` |
+| `packages/tome-postgres` | `openPostgresGraphStore` Queryable Base (single SoT); thin `createPostgresModule` Imp/test pipe — **no full cache** |
+| `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — binder via `imp-sql` `compilePostgres` against projection mirrors |
 
 ## Cross-adapter uniformity (LCD, nice-to-have)
 
@@ -26,13 +26,13 @@ Database adapters — integrated SQLite (`tome-sqlite` / `tome-imp-sql` in tome)
 - Postgres via `docker compose` (port 5432); CI uses the same image as a service container
 - Keep Postgres out of tome’s release image and default weighted suite
 - Imp → SQL compile tests do not need a live database
-- Connectivity tests need `POSTGRES_URI` (skip when unset/unreachable). From the workbench container use `host.docker.internal` instead of `localhost` when the sidecar is published on the Docker host
+- Base / connectivity tests need `POSTGRES_URI` (skip when unset/unreachable). From the workbench container use `host.docker.internal` instead of `localhost` when the sidecar is published on the Docker host
 
 ## Verify
 
 ```bash
 bun run typecheck
-# Live connectivity (optional locally; required meaningfully in CI):
+# Live Base / connectivity (optional locally; required meaningfully in CI):
 export POSTGRES_URI=postgres://tome:tome-postgres-dev@localhost:5432/tome
 bun test
 ```

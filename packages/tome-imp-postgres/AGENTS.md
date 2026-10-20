@@ -2,13 +2,12 @@
 
 ## What it is
 
-Thin Tome binder for Imp → SQL against a **provisional** Postgres relational schema (`nodes` + `relationships` with jsonb `properties`; relationship `type` = `{ULID}:{direction}`). Compile-only — no `pg` driver or store module.
+Thin Tome binder for Imp → SQL against the Postgres single SoT (`nodes` + `relationship_projections` with jsonb `properties`; relationship `type` = `{ULID}:{direction}`). Compile-only — no `pg` driver or store module. Canonical writes live in `relationship_records` (maintained by `tome-postgres`).
 
 ## Dependency rules
 
 - Depends on `imp-sql` and Imp packages (`imp-core-types`, `imp-registry`, `imp-collection-transforms`, `imp-pathing`)
 - Must **not** import `tome-db`, `tome-editor`, `tome-imp-sql`, or the `tome-postgres` store package for compile
-- Schema is provisional until Postgres CRUD lands — revise deliberately
 
 ## Layout
 
