@@ -48,6 +48,8 @@ describe("tome-imp-postgres", () => {
     expect(sql.toLowerCase()).toContain(`from "${TOME_POSTGRES_NODES_TABLE}"`)
     expect(sql).toContain("properties->>'status'")
     expect(sql.toLowerCase()).toContain("limit")
+    expect(sql).toMatch(/\$\d/)
+    expect(sql).not.toContain("?")
     expect(parameters).toContain("active")
     expect(parameters).toContain(5)
   })
@@ -78,6 +80,46 @@ describe("tome-imp-postgres", () => {
 
     const { sql, parameters } = compileImpGraphToTomePostgresSql(graph)
     expect(sql.toLowerCase()).toContain(`"${TOME_POSTGRES_RELATIONSHIPS_TABLE}"`)
+    expect(parameters).toContain(relationshipType(association, 0))
+  })
+
+  test("traverse with property bags uses jsonb || merge (not json_patch)", () => {
+    const association = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+    const graph: Graph = {
+      nodes: {
+        in: { id: "in", type: "input", inputs: {} },
+        hop: {
+          id: "hop",
+          type: "traverse",
+          inputs: {
+            association,
+            direction: 0,
+            edge_property: "priority",
+            edge_equals: "high",
+          },
+        },
+        out: { id: "out", type: "output", inputs: {} },
+      },
+      edges: {
+        e1: {
+          from: { node: "in", port: "value" },
+          to: { node: "hop", port: "collection" },
+        },
+        e2: {
+          from: { node: "hop", port: "collection" },
+          to: { node: "out", port: "value" },
+        },
+      },
+    }
+
+    const { sql, parameters } = compileImpGraphToTomePostgresSql(graph)
+    expect(sql).toContain("::jsonb")
+    expect(sql).toContain("||")
+    expect(sql).toContain("->>'priority'")
+    expect(sql.toLowerCase()).not.toContain("json_patch")
+    expect(sql.toLowerCase()).not.toContain("json_extract")
+    expect(sql.toLowerCase()).not.toContain("is_archived")
+    expect(parameters).toContain("high")
     expect(parameters).toContain(relationshipType(association, 0))
   })
 })

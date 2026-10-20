@@ -1,5 +1,5 @@
 import type { Graph } from "imp-core-types"
-import { compileSql, graphToKysely } from "imp-sql"
+import { compilePostgres, compileSql } from "imp-sql"
 import { createTomePostgresImpRegistry } from "./registry"
 import { createTomePostgresSchema } from "./schema"
 
@@ -8,11 +8,14 @@ export interface CompiledTomeImpPostgresSql {
   parameters: readonly unknown[]
 }
 
-/** Lower an Imp graph against the provisional Tome Postgres relational schema. */
+/**
+ * Lower an Imp graph against the provisional Tome Postgres relational schema.
+ * Translation only — does not execute against a live database.
+ */
 export function compileImpGraphToTomePostgresSql(
   graph: Graph,
 ): CompiledTomeImpPostgresSql {
-  const compiled = graphToKysely(graph, {
+  const compiled = compilePostgres(graph, {
     registry: createTomePostgresImpRegistry(),
     schema: createTomePostgresSchema(),
   })

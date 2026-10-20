@@ -7,7 +7,7 @@ Postgres adapters for Tome as **store modules** loaded via `dataStores` (same se
 | Package | Role |
 | --- | --- |
 | `packages/tome-postgres` | `createPostgresModule()` stub; future Postgres graph store |
-| `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — provisional Postgres schema binder |
+| `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — provisional Postgres schema binder via `imp-sql` `compilePostgres` (translation tests only) |
 
 ## Cross-adapter uniformity (LCD, nice-to-have)
 

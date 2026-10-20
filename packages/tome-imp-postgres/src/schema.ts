@@ -38,7 +38,7 @@ export function tomePostgresNodesColumnExpression(name: string): string {
   if (name === "id") {
     return name
   }
-  // Postgres jsonb text extract (override SQLite json_extract defaults).
+  // Postgres jsonb text extract (host mapping; dialect entry supplies defaults when unset).
   return `(properties->>'${name}')`
 }
 
