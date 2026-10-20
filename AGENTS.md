@@ -6,7 +6,7 @@ Postgres adapters for Tome as **store modules** loaded via `dataStores` (same se
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `openPostgresGraphStore` Queryable Base (single SoT + model documents + archive flag + solo corpus); thin `createPostgresModule` Imp/test pipe — **no full cache** |
+| `packages/tome-postgres` | `openPostgresGraphStore` Queryable Base (single SoT + model documents + archive flag + solo corpus); thin `createPostgresModule` with product query Q1 windows — **no full cache / CacheSync** |
 | `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — binder via `imp-sql` `compilePostgres` against projection mirrors |
 
 ## Cross-adapter uniformity (LCD, nice-to-have)
@@ -15,8 +15,8 @@ Database adapters — integrated SQLite (`tome-sqlite` / `tome-imp-sql` in tome)
 
 ## Dependency direction
 
-- **May** depend on `tome-graph-interfaces`, `tome-service-interfaces`, `pg`, and Imp packages (including `imp-sql`) as needed
-- Root workspaces include sibling `../tome/packages/…` and `../imp-ts/packages/*`
+- **May** depend on `tome-graph-interfaces`, `tome-service-interfaces`, `tome-sql`, `pg`, and Imp packages (including `imp-sql`) as needed
+- Root workspaces include sibling `../tome/packages/…` (incl. `tome-sql`) and `../imp-ts/packages/*`
 - **Must not** require changes to tome’s `workspaces` to develop or test this repo
 - Graph backends are **not** `extensions.json` kinds — use store/cache modules
 

@@ -15,7 +15,8 @@
     "pg": "^8.23.1",
     "tome-graph-interfaces": "workspace:*",
     "tome-imp-postgres": "workspace:*",
-    "tome-service-interfaces": "workspace:*"
+    "tome-service-interfaces": "workspace:*",
+    "tome-sql": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "1.2.23",

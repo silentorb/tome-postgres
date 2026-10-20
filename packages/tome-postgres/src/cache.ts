@@ -2,14 +2,23 @@ import { Client } from "pg";
 import type { Node, Properties, Relationship } from "tome-graph-interfaces";
 import type {
   GraphCounts,
+  MemberPageResult,
   TomeQueryCache,
 } from "tome-service-interfaces";
+import { relationFieldsByRowFromSqlRows } from "tome-sql";
 import { redactedPostgresPath } from "./resolve-connection";
 import { ensureSchema, truncateSchema } from "./schema";
 import {
   deleteRelationshipFromProjection,
   writeRelationshipFromProjection,
 } from "./relationship-write";
+import {
+  buildMembershipCte,
+  buildOutgoingProjectionOrderBy,
+  compileMemberPage,
+  MEMBER_DISPLAY_TITLE_SQL,
+  toPostgresSql,
+} from "./membership-query";
 
 export type OpenPostgresCacheOptions = {
   connectionString: string;
@@ -25,6 +34,27 @@ function asProperties(value: unknown): Properties {
     return {};
   }
   return value as Properties;
+}
+
+type ProjectionSqlRow = {
+  id: string;
+  record_id: string;
+  source_node_id: string;
+  target_node_id: string;
+  type: string;
+  properties: unknown;
+  resolved_group_id?: string | null;
+};
+
+function mapProjectionRow(row: ProjectionSqlRow): Relationship {
+  return {
+    id: row.id,
+    sourceNodeId: row.source_node_id,
+    targetNodeId: row.target_node_id,
+    type: row.type,
+    properties: asProperties(row.properties),
+    recordId: row.record_id,
+  };
 }
 
 /**
@@ -350,28 +380,234 @@ export async function openPostgresCache(
     async listOutgoingProjectionPropertyKeys(_sourceNodeId, _type) {
       notImplemented("listOutgoingProjectionPropertyKeys");
     },
-    async listRelationshipsFromSourceWindow(_sourceNodeId, _type, _query?) {
-      notImplemented("listRelationshipsFromSourceWindow");
+    async listRelationshipsFromSourceWindow(sourceNodeId, type, query?) {
+      assertOpen();
+      const { orderBy, needsTargetJoin } = buildOutgoingProjectionOrderBy(
+        query?.sorts,
+      );
+      const offsetRaw = query?.offset;
+      const offset =
+        typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0
+          ? Math.floor(offsetRaw)
+          : 0;
+      const limitRaw = query?.limit;
+      const limit =
+        limitRaw === undefined || limitRaw === null
+          ? null
+          : typeof limitRaw === "number" && Number.isFinite(limitRaw) && limitRaw > 0
+            ? Math.floor(limitRaw)
+            : null;
+
+      const totalResult = await client.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM relationship_projections
+         WHERE source_node_id = $1 AND type = $2`,
+        [sourceNodeId, type],
+      );
+      const total = Number(totalResult.rows[0]?.c ?? 0);
+
+      const joinSql = needsTargetJoin
+        ? "LEFT JOIN nodes n ON n.id = rp.target_node_id"
+        : "";
+      let selectSql = `SELECT rp.id, rp.record_id, rp.source_node_id, rp.target_node_id, rp.type,
+              rp.properties
+       FROM relationship_projections rp
+       ${joinSql}
+       WHERE rp.source_node_id = $1 AND rp.type = $2
+       ${orderBy}`;
+      const params: unknown[] = [sourceNodeId, type];
+      if (limit !== null) {
+        selectSql += ` LIMIT $3 OFFSET $4`;
+        params.push(limit, offset);
+      }
+
+      const pageResult = await client.query<ProjectionSqlRow>(selectSql, params);
+      return {
+        relationships: pageResult.rows.map(mapProjectionRow),
+        total,
+      };
     },
-    async listMemberPage(_setId, _query) {
-      notImplemented("listMemberPage");
+
+    async listMemberPage(setId, query) {
+      assertOpen();
+      const emitted = compileMemberPage(setId, query, "page");
+      if (emitted.empty) {
+        const empty: MemberPageResult = { relationships: [], total: 0 };
+        if (query.groups) empty.groupIds = [];
+        if (query.relationFields && query.relationFields.length > 0) {
+          empty.relationFieldsByRow = [];
+        }
+        return empty;
+      }
+
+      let total = 0;
+      if (emitted.countSql) {
+        const totalRow = await client.query<{ c: number }>(
+          emitted.countSql,
+          emitted.countParams,
+        );
+        total = Number(totalRow.rows[0]?.c ?? 0);
+      }
+
+      const offsetRaw = query.offset;
+      const offset =
+        typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0
+          ? Math.floor(offsetRaw)
+          : 0;
+      const limitRaw = query.limit;
+      const limit =
+        limitRaw === undefined || limitRaw === null
+          ? null
+          : typeof limitRaw === "number" && Number.isFinite(limitRaw) && limitRaw > 0
+            ? Math.floor(limitRaw)
+            : null;
+
+      let pageSql = emitted.pageSql;
+      const pageParams = [...emitted.pageParams];
+      if (emitted.applyLimitOffset && limit !== null) {
+        const base = pageParams.length;
+        pageSql += ` LIMIT $${base + 1} OFFSET $${base + 2}`;
+        pageParams.push(limit, offset);
+      }
+
+      const pageResult = await client.query<ProjectionSqlRow>(pageSql, pageParams);
+      const rows = pageResult.rows;
+      if (query.memberIds && query.memberIds.length > 0) {
+        total = rows.length;
+      }
+
+      const result: MemberPageResult = {
+        relationships: rows.map(mapProjectionRow),
+        total,
+      };
+      if (emitted.includeGroupId || query.groups) {
+        result.groupIds = rows.map((row) =>
+          typeof row.resolved_group_id === "string" && row.resolved_group_id
+            ? row.resolved_group_id
+            : null,
+        );
+      }
+      if (query.relationFields && query.relationFields.length > 0) {
+        result.relationFieldsByRow = relationFieldsByRowFromSqlRows(
+          rows as unknown as Record<string, unknown>[],
+          emitted.relationColumns,
+        );
+      }
+      return result;
     },
-    async listMemberPageNodeIds(_setId, _query) {
-      notImplemented("listMemberPageNodeIds");
+
+    async listMemberPageNodeIds(setId, query) {
+      assertOpen();
+      const emitted = compileMemberPage(setId, query, "ids");
+      if (emitted.empty) return [];
+      const result = await client.query<{ member_id?: string; id?: string }>(
+        emitted.pageSql,
+        emitted.pageParams,
+      );
+      return result.rows
+        .map((row) => row.member_id ?? row.id!)
+        .filter(Boolean);
     },
-    async listRelatedTargetNodeIds(_sourceNodeId, _type) {
-      notImplemented("listRelatedTargetNodeIds");
+
+    async listRelatedTargetNodeIds(sourceNodeId, type) {
+      assertOpen();
+      const result = await client.query<{ id: string }>(
+        `SELECT DISTINCT target_node_id AS id
+         FROM relationship_projections
+         WHERE source_node_id = $1 AND type = $2`,
+        [sourceNodeId, type],
+      );
+      return result.rows.map((row) => row.id);
     },
+
     async listRelationshipsFromSourceForTargetIds(
-      _sourceNodeId,
-      _type,
-      _targetIds,
+      sourceNodeId,
+      type,
+      targetIds,
     ) {
-      notImplemented("listRelationshipsFromSourceForTargetIds");
+      assertOpen();
+      if (targetIds.length === 0) return [];
+      const placeholders = targetIds.map((_, i) => `$${i + 3}`).join(", ");
+      const result = await client.query<ProjectionSqlRow>(
+        `SELECT id, record_id, source_node_id, target_node_id, type, properties
+         FROM relationship_projections
+         WHERE source_node_id = $1 AND type = $2
+           AND target_node_id IN (${placeholders})`,
+        [sourceNodeId, type, ...targetIds],
+      );
+      return result.rows.map(mapProjectionRow);
     },
-    async listDistinctSetMemberScopeIds(_setId, _query) {
-      notImplemented("listDistinctSetMemberScopeIds");
+
+    async listDistinctSetMemberScopeIds(setId, query) {
+      assertOpen();
+      const membership = buildMembershipCte(setId, query.projections ?? []);
+      if (!membership) return [];
+
+      const scopeType = query.scopeProjectionType?.trim();
+      if (!scopeType) return [];
+
+      const orderTypes = (query.scopeOrderProjectionTypes ?? [])
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      let orderExpr = "999";
+      const orderParams: unknown[] = [];
+      if (orderTypes.length > 0) {
+        const placeholders = orderTypes.map(() => "?").join(", ");
+        orderExpr = `COALESCE(
+          (SELECT (NULLIF(rp.properties->>'order', ''))::double precision
+           FROM relationship_projections rp
+           WHERE rp.source_node_id = s.scope_id AND rp.type IN (${placeholders})
+             AND rp.properties->>'order' IS NOT NULL
+             AND rp.properties->>'order' <> ''
+           ORDER BY (NULLIF(rp.properties->>'order', ''))::double precision ASC
+           LIMIT 1),
+          999
+        )`;
+        orderParams.push(...orderTypes);
+      }
+
+      const titleSql = MEMBER_DISPLAY_TITLE_SQL;
+      const sqlWithQ = `${membership.sql},
+      scopes AS (
+        SELECT DISTINCT sp.target_node_id AS scope_id
+        FROM members m
+        INNER JOIN relationship_projections sp
+          ON sp.source_node_id = m.member_id AND sp.type = ?
+        UNION
+        SELECT DISTINCT sp.source_node_id AS scope_id
+        FROM members m
+        INNER JOIN relationship_projections sp
+          ON sp.target_node_id = m.member_id AND sp.type = ?
+      )
+      SELECT s.scope_id AS id,
+             ${titleSql} AS title,
+             ${orderExpr} AS sort_key
+      FROM scopes s
+      LEFT JOIN nodes n ON n.id = s.scope_id
+      ORDER BY sort_key ASC, LOWER(${titleSql}) ASC, s.scope_id ASC`;
+
+      const finalized = toPostgresSql(sqlWithQ, [
+        ...membership.params,
+        scopeType,
+        scopeType,
+        ...orderParams,
+      ]);
+      const rows = await client.query<{
+        id: string;
+        title: string;
+        sort_key: number;
+      }>(finalized.sql, finalized.params);
+
+      return rows.rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        sortKey:
+          typeof row.sort_key === "number"
+            ? row.sort_key
+            : Number(row.sort_key) || 999,
+      }));
     },
+
     async getExpressionIndexStatus(_digest) {
       notImplemented("getExpressionIndexStatus");
     },
@@ -393,8 +629,84 @@ export async function openPostgresCache(
     async markExpressionIndexesStaleForTypes(_types, _dirtyMemberIds?) {
       notImplemented("markExpressionIndexesStaleForTypes");
     },
-    async listComposedGroupHeaders(_query) {
-      notImplemented("listComposedGroupHeaders");
+
+    async listComposedGroupHeaders(query) {
+      assertOpen();
+      const groupSetId = query.groupTypeDatabaseId?.trim();
+      if (!groupSetId) return [];
+
+      const membership = buildMembershipCte(
+        groupSetId,
+        query.groupSetProjections ?? [],
+      );
+      if (!membership) return [];
+
+      const scopeType = query.groupToScopeProjectionType?.trim();
+      const scopeId = query.scopeNodeId?.trim();
+      const filterByScope = Boolean(scopeType && scopeId);
+
+      const scopeFilterSql = filterByScope
+        ? `WHERE (
+             EXISTS (
+               SELECT 1 FROM relationship_projections gsp
+               WHERE gsp.source_node_id = m.member_id AND gsp.type = ? AND gsp.target_node_id = ?
+             )
+             OR EXISTS (
+               SELECT 1 FROM relationship_projections gsp
+               WHERE gsp.target_node_id = m.member_id AND gsp.type = ? AND gsp.source_node_id = ?
+             )
+           )`
+        : "";
+
+      const titleSql = MEMBER_DISPLAY_TITLE_SQL;
+      const sortKeySql = `COALESCE(
+        (SELECT (NULLIF(rp.properties->>'order', ''))::double precision
+         FROM relationship_projections rp
+         WHERE rp.source_node_id = m.member_id AND rp.target_node_id = ?
+           AND rp.properties->>'order' IS NOT NULL AND rp.properties->>'order' <> ''
+         ORDER BY (NULLIF(rp.properties->>'order', ''))::double precision ASC
+         LIMIT 1),
+        (SELECT (NULLIF(rp.properties->>'order', ''))::double precision
+         FROM relationship_projections rp
+         WHERE rp.target_node_id = m.member_id AND rp.source_node_id = ?
+           AND rp.properties->>'order' IS NOT NULL AND rp.properties->>'order' <> ''
+         ORDER BY (NULLIF(rp.properties->>'order', ''))::double precision ASC
+         LIMIT 1),
+        999
+      )`;
+
+      const sqlWithQ = `${membership.sql}
+      SELECT m.member_id AS id,
+             ${titleSql} AS title,
+             ${sortKeySql} AS sort_key
+      FROM members m
+      LEFT JOIN nodes n ON n.id = m.member_id
+      ${scopeFilterSql}
+      ORDER BY sort_key ASC, LOWER(${titleSql}) ASC, m.member_id ASC`;
+
+      const params: unknown[] = [
+        ...membership.params,
+        groupSetId,
+        groupSetId,
+      ];
+      if (filterByScope && scopeType && scopeId) {
+        params.push(scopeType, scopeId, scopeType, scopeId);
+      }
+      const finalized = toPostgresSql(sqlWithQ, params);
+      const rows = await client.query<{
+        id: string;
+        title: string;
+        sort_key: number;
+      }>(finalized.sql, finalized.params);
+
+      return rows.rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        sortKey:
+          typeof row.sort_key === "number"
+            ? row.sort_key
+            : Number(row.sort_key) || 999,
+      }));
     },
     async countIncidentRelationships(nodeId) {
       assertOpen();
