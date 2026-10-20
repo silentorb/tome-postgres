@@ -2,7 +2,7 @@
 
 ## What it is
 
-Postgres store package for Tome. Primary entry: `openPostgresGraphStore` — authoritative **Queryable Base** against a **single SQL SoT** (nodes + `relationship_records` + same-DB `relationship_projections` mirrors for Imp). Thin `createPostgresModule` opens an Imp/test pipe over the same tables — **not** a product cache and not full `TomeQueryCache` parity. Imp → SQL compile lives in sibling package `tome-imp-postgres`. Loaded via `tome-server` `dataStores` when configured — not an `extensions.json` kind.
+Postgres store package for Tome. Primary entry: `openPostgresGraphStore` — authoritative **Queryable Base** against a **single SQL SoT** (nodes + `relationship_records` + same-DB `relationship_projections` mirrors for Imp; `model_documents` for model config / workspace; `archiveNodeFile` flips `nodes.is_archived`; solo `"default"` corpus). Thin `createPostgresModule` opens an Imp/test pipe over the same tables — **not** a product cache and not full `TomeQueryCache` parity. Imp → SQL compile lives in sibling package `tome-imp-postgres`. Loaded via `tome-server` `dataStores` when configured — not an `extensions.json` kind.
 
 ## Connection
 
@@ -20,7 +20,8 @@ Postgres store package for Tome. Primary entry: `openPostgresGraphStore` — aut
 | `src/module.ts` | `createPostgresModule()` thin Imp/test pipe |
 | `src/graph-store.ts` | `openPostgresGraphStore` Queryable Base |
 | `src/cache.ts` | Thin SoT query handle (compat) |
-| `src/schema.ts` | Single-SoT DDL |
+| `src/schema.ts` | Single-SoT DDL (graph + corpora + model_documents) |
+| `src/model-documents.ts` | Model document empty defaults + read/write |
 | `src/relationship-expand.ts` | Record → dual projection expand |
 | `src/relationship-write.ts` | Record/projection write helpers |
 | `src/resolve-connection.ts` | URI + redacted path |

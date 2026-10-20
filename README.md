@@ -8,7 +8,7 @@ Heavy Postgres runtime and CI live here so tome’s light weighted test suite st
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `openPostgresGraphStore` — Queryable Base on a **single SQL SoT** (records + projection mirrors); thin `createPostgresModule` Imp/test pipe. **No full SQLite-style cache.** |
+| `packages/tome-postgres` | `openPostgresGraphStore` — Queryable Base on a **single SQL SoT** (records + projection mirrors; model documents; archive flag; solo corpus). Thin `createPostgresModule` Imp/test pipe. **No full SQLite-style cache.** |
 | `packages/tome-imp-postgres` | Thin Tome binder: Imp → SQL via `compilePostgres` against `relationship_projections` |
 
 ## Layout (workbench)

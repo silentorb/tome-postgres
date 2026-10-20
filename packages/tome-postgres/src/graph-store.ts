@@ -1,6 +1,7 @@
 import { Client } from "pg";
 import type { Graph } from "imp-core-types";
 import type {
+  DynamicPropertiesFile,
   ExecuteImpContext,
   ImpCollectionResult,
   ImpGraph,
@@ -9,12 +10,24 @@ import type {
   Properties,
   Relationship,
   RelationshipRecordRef,
+  RelationshipTypesFile,
+  SchemaFile,
+  StoreChangeEvent,
   StoreChangeListener,
+  TableSchemasFile,
   TomeCorpusInfo,
   TomeGraphStoreQueryable,
+  ViewsFile,
   WorkspaceFile,
 } from "tome-graph-interfaces";
 import { compileImpGraphToTomePostgresSql } from "tome-imp-postgres";
+import {
+  DEFAULT_CORPUS_ID,
+  readModelDocument,
+  storeChangeKindForModel,
+  writeModelDocument,
+  type ModelDocumentKind,
+} from "./model-documents";
 import { redactedPostgresPath } from "./resolve-connection";
 import { ensureSchema, truncateSchema } from "./schema";
 import {
@@ -29,10 +42,6 @@ export type OpenPostgresGraphStoreOptions = {
   clean?: boolean;
 };
 
-function notImplemented(method: string): never {
-  throw new Error(`tome-postgres Base B1: ${method} is not implemented`);
-}
-
 function asProperties(value: unknown): Properties {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -40,16 +49,12 @@ function asProperties(value: unknown): Properties {
   return value as Properties;
 }
 
-function emptyWorkspace(): WorkspaceFile {
-  return {
-    version: 1,
-    homeNodeId: "",
-    archiveNodeId: "",
-    protectedNodeIds: [],
-    graphExplorer: { defaultAnchorNodeId: "" },
-    staticSite: { homeNodeId: "" },
-    quickLinks: [],
-  };
+function assertDefaultCorpus(corpusId: string, method: string): void {
+  if (corpusId !== DEFAULT_CORPUS_ID) {
+    throw new Error(
+      `tome-postgres Base B2: ${method} supports only corpus "${DEFAULT_CORPUS_ID}" (got "${corpusId}")`,
+    );
+  }
 }
 
 function applyParameters(
@@ -81,11 +86,15 @@ export async function openPostgresGraphStore(
 ): Promise<TomeGraphStoreQueryable> {
   const client = new Client({ connectionString: options.connectionString });
   await client.connect();
+
+  let workspaceCache: WorkspaceFile;
   try {
     await ensureSchema(client);
     if (options.clean) {
       await truncateSchema(client);
     }
+    // Sync listCorpora needs an in-memory workspace mirror (loaded at open / on write).
+    workspaceCache = await readModelDocument<WorkspaceFile>(client, "workspace");
   } catch (err) {
     await client.end().catch(() => undefined);
     throw err;
@@ -102,8 +111,8 @@ export async function openPostgresGraphStore(
     }
   };
 
-  const emit = (kind: "node" | "relationships") => {
-    const event = { path: contentDir, kind };
+  const emit = (kind: StoreChangeEvent["kind"]) => {
+    const event: StoreChangeEvent = { path: contentDir, kind };
     for (const listener of listeners) {
       listener(event);
     }
@@ -118,12 +127,29 @@ export async function openPostgresGraphStore(
     return result.rows as Record<string, unknown>[];
   };
 
-  const soloCorpus: TomeCorpusInfo = {
-    id: "default",
+  const readModel = async <T>(kind: ModelDocumentKind): Promise<T> => {
+    assertOpen();
+    return readModelDocument<T>(client, kind);
+  };
+
+  const writeModel = async (
+    kind: ModelDocumentKind,
+    document: unknown,
+  ): Promise<void> => {
+    assertOpen();
+    await writeModelDocument(client, kind, document);
+    if (kind === "workspace") {
+      workspaceCache = document as WorkspaceFile;
+    }
+    emit(storeChangeKindForModel(kind));
+  };
+
+  const soloCorpus = (): TomeCorpusInfo => ({
+    id: DEFAULT_CORPUS_ID,
     contentDir,
     access: "readwrite",
-    workspace: emptyWorkspace(),
-  };
+    workspace: workspaceCache,
+  });
 
   const store: TomeGraphStoreQueryable = {
     capabilities: { queryable: true, impExecution: "sql" },
@@ -152,11 +178,11 @@ export async function openPostgresGraphStore(
     },
 
     listCorpora() {
-      return [soloCorpus];
+      return [soloCorpus()];
     },
 
     locateNode(_id) {
-      return soloCorpus.id;
+      return DEFAULT_CORPUS_ID;
     },
 
     contentDirForNode(_nodeId) {
@@ -206,8 +232,9 @@ export async function openPostgresGraphStore(
       emit("node");
     },
 
-    async upsertNodeToCorpus(_corpusId, _node, _body?) {
-      notImplemented("upsertNodeToCorpus");
+    async upsertNodeToCorpus(corpusId, node, body?) {
+      assertDefaultCorpus(corpusId, "upsertNodeToCorpus");
+      await store.upsertNode(node, body);
     },
 
     async mergeNodeProperties(id, patch) {
@@ -233,12 +260,30 @@ export async function openPostgresGraphStore(
       }
     },
 
-    async archiveNodeFile(_id) {
-      notImplemented("archiveNodeFile");
+    async archiveNodeFile(id) {
+      assertOpen();
+      const result = await client.query(
+        `UPDATE nodes SET is_archived = TRUE WHERE id = $1`,
+        [id],
+      );
+      if ((result.rowCount ?? 0) > 0) {
+        emit("node");
+        return true;
+      }
+      return false;
     },
 
-    async unarchiveNodeFile(_id) {
-      notImplemented("unarchiveNodeFile");
+    async unarchiveNodeFile(id) {
+      assertOpen();
+      const result = await client.query(
+        `UPDATE nodes SET is_archived = FALSE WHERE id = $1`,
+        [id],
+      );
+      if ((result.rowCount ?? 0) > 0) {
+        emit("node");
+        return true;
+      }
+      return false;
     },
 
     async getRelationshipRecord(a, b, type) {
@@ -384,43 +429,49 @@ export async function openPostgresGraphStore(
     },
 
     async readRelationshipTypes() {
-      notImplemented("readRelationshipTypes");
+      return readModel<RelationshipTypesFile>("relationship_types");
     },
-    async writeRelationshipTypes(_file) {
-      notImplemented("writeRelationshipTypes");
+    async writeRelationshipTypes(file) {
+      await writeModel("relationship_types", file);
     },
     async readSchema() {
-      notImplemented("readSchema");
+      return readModel<SchemaFile>("schema");
     },
-    async writeSchema(_file) {
-      notImplemented("writeSchema");
+    async writeSchema(file) {
+      await writeModel("schema", file);
     },
     async readViews() {
-      notImplemented("readViews");
+      return readModel<ViewsFile>("views");
     },
-    async writeViews(_file) {
-      notImplemented("writeViews");
+    async writeViews(file) {
+      await writeModel("views", file);
     },
     async readTableSchemas() {
-      notImplemented("readTableSchemas");
+      return readModel<TableSchemasFile>("table_schemas");
     },
-    async writeTableSchemas(_file) {
-      notImplemented("writeTableSchemas");
+    async writeTableSchemas(file) {
+      await writeModel("table_schemas", file);
     },
     async readWorkspace() {
-      notImplemented("readWorkspace");
+      assertOpen();
+      workspaceCache = await readModelDocument<WorkspaceFile>(
+        client,
+        "workspace",
+      );
+      return workspaceCache;
     },
-    async writeWorkspace(_file) {
-      notImplemented("writeWorkspace");
+    async writeWorkspace(file) {
+      await writeModel("workspace", file);
     },
-    async writeWorkspaceForCorpus(_corpusId, _file) {
-      notImplemented("writeWorkspaceForCorpus");
+    async writeWorkspaceForCorpus(corpusId, file) {
+      assertDefaultCorpus(corpusId, "writeWorkspaceForCorpus");
+      await store.writeWorkspace(file);
     },
     async readDynamicProperties() {
-      notImplemented("readDynamicProperties");
+      return readModel<DynamicPropertiesFile>("dynamic_properties");
     },
-    async writeDynamicProperties(_file) {
-      notImplemented("writeDynamicProperties");
+    async writeDynamicProperties(file) {
+      await writeModel("dynamic_properties", file);
     },
 
     async isNodeArchived(id) {
@@ -526,7 +577,7 @@ export async function openPostgresGraphStore(
     queryAll,
   };
 
-  // Silence unused watching in B1 (fs watch is a no-op).
+  // Silence unused watching (fs watch is a no-op on Postgres Base).
   void watching;
 
   return store;

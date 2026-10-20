@@ -24,7 +24,7 @@ async function canConnect(): Promise<boolean> {
 
 const live = await canConnect();
 
-describe.skipIf(!live)("tome-postgres graph store (Base B1)", () => {
+describe.skipIf(!live)("tome-postgres graph store (Base)", () => {
   test("upserts nodes and relationship records with dual projections", async () => {
     const store = await openPostgresGraphStore({
       connectionString: resolvePostgresConnectionString(),
@@ -171,6 +171,242 @@ describe.skipIf(!live)("tome-postgres graph store (Base B1)", () => {
 
       const traversed = await store.executeImp(traverseGraph);
       expect(traversed.rows.map((r) => r.id).sort()).toEqual(["b", "c"]);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+describe.skipIf(!live)("tome-postgres graph store (Base B2)", () => {
+  test("model document round-trips and empty defaults", async () => {
+    const store = await openPostgresGraphStore({
+      connectionString: resolvePostgresConnectionString(),
+      clean: true,
+    });
+    try {
+      expect(await store.readRelationshipTypes()).toEqual({
+        version: 1,
+        relationshipTypes: {},
+      });
+      expect(await store.readSchema()).toEqual({
+        version: 1,
+        relationshipRules: [],
+        enums: {},
+      });
+      expect(await store.readViews()).toEqual({ version: 2, views: [] });
+      expect(await store.readTableSchemas()).toEqual({
+        version: 1,
+        tables: {},
+      });
+      expect(await store.readDynamicProperties()).toEqual({
+        version: 1,
+        properties: [],
+        columnSets: [],
+      });
+      expect(await store.readWorkspace()).toEqual({
+        version: 1,
+        homeNodeId: "",
+        archiveNodeId: "",
+        protectedNodeIds: [],
+        graphExplorer: { defaultAnchorNodeId: "" },
+        staticSite: { homeNodeId: "" },
+        quickLinks: [],
+      });
+
+      const association = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+      await store.writeRelationshipTypes({
+        version: 1,
+        relationshipTypes: {
+          [association]: {
+            perspectives: ["from", "to"],
+          },
+        },
+      });
+      await store.writeSchema({
+        version: 1,
+        relationshipRules: [],
+        enums: { status: { options: ["a"], default: "a", defaultOrder: "asc" } },
+      });
+      await store.writeViews({
+        version: 2,
+        views: [
+          {
+            id: "v1",
+            nodeId: "n1",
+            association,
+            name: "V1",
+            sorts: [],
+          },
+        ],
+      });
+      await store.writeTableSchemas({
+        version: 1,
+        tables: { t1: { columns: [] } },
+      });
+      await store.writeDynamicProperties({
+        version: 1,
+        properties: [
+          {
+            id: "p1",
+            owner: "t1",
+            columnKey: "k",
+            columnName: "K",
+            columnType: "text",
+            resolverId: "literal",
+          },
+        ],
+        columnSets: [],
+      });
+
+      expect(
+        (await store.readRelationshipTypes()).relationshipTypes[association]
+          ?.perspectives,
+      ).toEqual(["from", "to"]);
+      expect((await store.readSchema()).enums.status?.default).toBe("a");
+      expect((await store.readViews()).views).toHaveLength(1);
+      expect((await store.readTableSchemas()).tables.t1).toEqual({
+        columns: [],
+      });
+      expect((await store.readDynamicProperties()).properties[0]?.id).toBe("p1");
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("workspace write reflects in listCorpora", async () => {
+    const store = await openPostgresGraphStore({
+      connectionString: resolvePostgresConnectionString(),
+      clean: true,
+    });
+    try {
+      const workspace = {
+        version: 1 as const,
+        homeNodeId: "home",
+        archiveNodeId: "archive",
+        protectedNodeIds: ["home", "archive"],
+        graphExplorer: { defaultAnchorNodeId: "home" },
+        staticSite: { homeNodeId: "home" },
+        quickLinks: [],
+      };
+      await store.writeWorkspace(workspace);
+      expect(store.listCorpora()[0]?.workspace).toEqual(workspace);
+      expect(await store.readWorkspace()).toEqual(workspace);
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("archiveNodeFile flips is_archived", async () => {
+    const store = await openPostgresGraphStore({
+      connectionString: resolvePostgresConnectionString(),
+      clean: true,
+    });
+    try {
+      expect(await store.archiveNodeFile("missing")).toBe(false);
+      await store.upsertNode({ id: "n1", properties: { title: "One" } });
+      expect(await store.isNodeArchived("n1")).toBe(false);
+      expect(await store.archiveNodeFile("n1")).toBe(true);
+      expect(await store.isNodeArchived("n1")).toBe(true);
+      expect(await store.unarchiveNodeFile("n1")).toBe(true);
+      expect(await store.isNodeArchived("n1")).toBe(false);
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("solo corpus helpers accept default and refuse others", async () => {
+    const store = await openPostgresGraphStore({
+      connectionString: resolvePostgresConnectionString(),
+      clean: true,
+    });
+    try {
+      await store.upsertNodeToCorpus("default", {
+        id: "solo",
+        properties: { title: "Solo" },
+      });
+      expect(await store.getNode("solo")).toEqual({
+        id: "solo",
+        properties: { title: "Solo" },
+      });
+
+      const workspace = {
+        version: 1 as const,
+        homeNodeId: "solo",
+        archiveNodeId: "",
+        protectedNodeIds: [],
+        graphExplorer: { defaultAnchorNodeId: "" },
+        staticSite: { homeNodeId: "" },
+        quickLinks: [],
+      };
+      await store.writeWorkspaceForCorpus("default", workspace);
+      expect(await store.readWorkspace()).toEqual(workspace);
+
+      await expect(
+        store.upsertNodeToCorpus("other", {
+          id: "x",
+          properties: {},
+        }),
+      ).rejects.toThrow(/only corpus "default"/);
+      await expect(
+        store.writeWorkspaceForCorpus("other", workspace),
+      ).rejects.toThrow(/only corpus "default"/);
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("executeImp still runs after archive", async () => {
+    const store = await openPostgresGraphStore({
+      connectionString: resolvePostgresConnectionString(),
+      clean: true,
+    });
+    try {
+      await store.upsertNode({
+        id: "live",
+        properties: { status: "active", title: "Live" },
+      });
+      await store.upsertNode({
+        id: "archived",
+        properties: { status: "active", title: "Archived" },
+      });
+      await store.archiveNodeFile("archived");
+
+      const filterGraph: Graph = {
+        nodes: {
+          in: { id: "in", type: "input", inputs: {} },
+          col: { id: "col", type: "column", inputs: { name: "status" } },
+          lit: { id: "lit", type: "literal", inputs: { value: "active" } },
+          eq: { id: "eq", type: "equals", inputs: {} },
+          filter: { id: "filter", type: "filter", inputs: {} },
+          out: { id: "out", type: "output", inputs: {} },
+        },
+        edges: {
+          e_col: {
+            from: { node: "col", port: "value" },
+            to: { node: "eq", port: "left" },
+          },
+          e_lit: {
+            from: { node: "lit", port: "value" },
+            to: { node: "eq", port: "right" },
+          },
+          e_pred: {
+            from: { node: "eq", port: "value" },
+            to: { node: "filter", port: "predicate" },
+          },
+          e_in: {
+            from: { node: "in", port: "value" },
+            to: { node: "filter", port: "collection" },
+          },
+          e_out: {
+            from: { node: "filter", port: "collection" },
+            to: { node: "out", port: "value" },
+          },
+        },
+      };
+
+      const result = await store.executeImp(filterGraph);
+      // Binder does not filter is_archived in B2 — both active rows still match.
+      expect(result.rows.map((r) => r.id).sort()).toEqual(["archived", "live"]);
     } finally {
       await store.close();
     }

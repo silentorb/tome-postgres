@@ -8,6 +8,15 @@ export {
 } from "./resolve-connection";
 export { ensureSchema, truncateSchema } from "./schema";
 export {
+  DEFAULT_CORPUS_ID,
+  emptyRelationshipTypesFile,
+  emptySchemaFile,
+  emptyViewsFile,
+  emptyTableSchemasFile,
+  emptyDynamicPropertiesFile,
+  emptyWorkspaceFile,
+} from "./model-documents";
+export {
   expandRelationshipRecord,
   parseProjectionType,
   projectionTypeForEndpoint,

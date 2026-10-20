@@ -56,12 +56,39 @@ export async function ensureSchema(client: Client): Promise<void> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS corpora (
+      id TEXT PRIMARY KEY,
+      access TEXT NOT NULL DEFAULT 'readwrite',
+      content_label TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS model_documents (
+      corpus_id TEXT NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      document JSONB NOT NULL,
+      PRIMARY KEY (corpus_id, kind)
+    );
+  `);
+
+  await client.query(`
+    INSERT INTO corpora (id, access, content_label)
+    VALUES ('default', 'readwrite', '')
+    ON CONFLICT (id) DO NOTHING
   `);
 }
 
-/** Wipe SoT graph tables (connectivity / test reset). */
+/**
+ * Wipe SoT graph + model document tables (connectivity / test reset).
+ * Leaves `corpora` rows; re-seeds `default` if missing.
+ */
 export async function truncateSchema(client: Client): Promise<void> {
   await client.query(`
-    TRUNCATE TABLE relationship_projections, relationship_records, nodes, meta CASCADE;
+    TRUNCATE TABLE relationship_projections, relationship_records, nodes, meta, model_documents CASCADE;
+  `);
+  await client.query(`
+    INSERT INTO corpora (id, access, content_label)
+    VALUES ('default', 'readwrite', '')
+    ON CONFLICT (id) DO NOTHING
   `);
 }
