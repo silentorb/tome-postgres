@@ -7,8 +7,16 @@ describe("createPostgresModule", () => {
     expect(mod.id).toBe("tome-postgres");
   });
 
-  test("open rejects until the store is implemented", async () => {
-    const mod = createPostgresModule();
-    await expect(mod.open()).rejects.toThrow(/not implemented/);
+  test("open rejects when connection string is missing", async () => {
+    const previous = process.env.POSTGRES_URI;
+    delete process.env.POSTGRES_URI;
+    try {
+      const mod = createPostgresModule();
+      await expect(mod.open()).rejects.toThrow(/POSTGRES_URI|connectionString/);
+    } finally {
+      if (previous !== undefined) {
+        process.env.POSTGRES_URI = previous;
+      }
+    }
   });
 });

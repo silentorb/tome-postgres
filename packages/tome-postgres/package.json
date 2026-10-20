@@ -11,11 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "pg": "^8.23.1",
     "tome-graph-interfaces": "workspace:*",
     "tome-service-interfaces": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "1.2.23",
+    "@types/pg": "^8.23.1",
+    "imp-core-types": "workspace:*",
+    "tome-imp-postgres": "workspace:*",
     "typescript": "5.8.2"
   }
 }

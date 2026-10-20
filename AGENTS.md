@@ -6,8 +6,8 @@ Postgres adapters for Tome as **store modules** loaded via `dataStores` (same se
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `createPostgresModule()` stub; future Postgres graph store |
-| `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — provisional Postgres schema binder via `imp-sql` `compilePostgres` (translation tests only) |
+| `packages/tome-postgres` | `createPostgresModule()` — thin `pg` handle (provisional DDL, node/rel upsert, `queryAll`); not full `TomeQueryCache` / Base parity |
+| `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — provisional schema binder via `imp-sql` `compilePostgres` |
 
 ## Cross-adapter uniformity (LCD, nice-to-have)
 
@@ -15,7 +15,7 @@ Database adapters — integrated SQLite (`tome-sqlite` / `tome-imp-sql` in tome)
 
 ## Dependency direction
 
-- **May** depend on `tome-graph-interfaces`, `tome-service-interfaces`, and Imp packages (including `imp-sql`) as needed
+- **May** depend on `tome-graph-interfaces`, `tome-service-interfaces`, `pg`, and Imp packages (including `imp-sql`) as needed
 - Root workspaces include sibling `../tome/packages/…` and `../imp-ts/packages/*`
 - **Must not** require changes to tome’s `workspaces` to develop or test this repo
 - Graph backends are **not** `extensions.json` kinds — use store/cache modules
@@ -26,15 +26,18 @@ Database adapters — integrated SQLite (`tome-sqlite` / `tome-imp-sql` in tome)
 - Postgres via `docker compose` (port 5432); CI uses the same image as a service container
 - Keep Postgres out of tome’s release image and default weighted suite
 - Imp → SQL compile tests do not need a live database
+- Connectivity tests need `POSTGRES_URI` (skip when unset/unreachable). From the workbench container use `host.docker.internal` instead of `localhost` when the sidecar is published on the Docker host
 
 ## Verify
 
 ```bash
 bun run typecheck
+# Live connectivity (optional locally; required meaningfully in CI):
+export POSTGRES_URI=postgres://tome:tome-postgres-dev@localhost:5432/tome
 bun test
 ```
 
-Workbench (when mounted): `bash scripts/run-in-tome-postgres.sh run test`.
+Workbench (when mounted): `bash scripts/run-in-tome-postgres.sh run test` with `POSTGRES_URI` set for live tests.
 
 ## Feature docs (in tome / imp-ts)
 

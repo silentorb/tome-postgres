@@ -1,16 +1,25 @@
 import type { TomeCacheModule } from "tome-service-interfaces";
+import { openPostgresCache } from "./cache";
+import {
+  resolvePostgresConnectionString,
+  type PostgresConnectionOptions,
+} from "./resolve-connection";
 
 /**
  * Postgres store module for Tome `dataStores` wiring.
- * Stub: `open()` rejects until graph store / Imp SQL execution are implemented.
+ * Thin connectivity handle — not full SQLite `TomeQueryCache` parity.
  */
 export function createPostgresModule(): TomeCacheModule {
   return {
     id: "tome-postgres",
-    async open(_options) {
-      throw new Error(
-        "tome-postgres is a scaffold stub; Postgres graph store is not implemented yet",
+    async open(options) {
+      const connectionString = resolvePostgresConnectionString(
+        options as PostgresConnectionOptions | undefined,
       );
+      return openPostgresCache({
+        connectionString,
+        clean: options?.clean,
+      });
     },
   };
 }
