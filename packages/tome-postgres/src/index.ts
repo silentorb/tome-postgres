@@ -1,4 +1,11 @@
 export { createPostgresModule } from "./module";
+export {
+  createPostgresStoreModule,
+  isPostgresSoTHandle,
+  type PostgresSoTHandle,
+  type PostgresStoreOpenOptions,
+} from "./store-module";
+export { createPostgresFtsModule, type PostgresFtsOpenOptions } from "./fts-module";
 export { openPostgresCache } from "./cache";
 export { openPostgresGraphStore } from "./graph-store";
 export {

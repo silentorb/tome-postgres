@@ -8,7 +8,7 @@ Heavy Postgres runtime and CI live here so tome’s light weighted test suite st
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `openPostgresGraphStore` — Queryable Base on a **single SQL SoT** (records + projection mirrors; model documents; archive flag; solo corpus). Thin `createPostgresModule` pipe with product query windows + expression indexes. **`openPostgresFtsSearch`** — same-DB `tsvector` FTS via shared `TomeSearchBackend` (no sync-fed indexing). **No full SQLite-style cache / CacheSync.** |
+| `packages/tome-postgres` | Queryable Base on a **single SQL SoT** (model documents; archive flag; solo corpus). Host `dataStores` factories: **`createPostgresStoreModule`**, **`createPostgresFtsModule`** (same-DB FTS, no sync). Thin `createPostgresModule` for Imp/tests. Product windows + expression indexes on the thin cache pipe. **No CacheSync.** See tome `tome-server.postgres.example.json`. |
 | `packages/tome-imp-postgres` | Thin Tome binder: Imp → SQL via `compilePostgres` against `relationship_projections` |
 
 ## Layout (workbench)

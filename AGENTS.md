@@ -6,7 +6,7 @@ Postgres adapters for Tome as **store modules** loaded via `dataStores` (same se
 
 | Package | Role |
 | --- | --- |
-| `packages/tome-postgres` | `openPostgresGraphStore` Queryable Base (single SoT + model documents + archive flag + solo corpus); thin `createPostgresModule` with product query windows + expression indexes; `openPostgresFtsSearch` same-DB FTS (`TomeSearchBackend` without sync) — **no full cache / CacheSync** |
+| `packages/tome-postgres` | Queryable Base SoT + thin query pipe + same-DB FTS. Host modules: `createPostgresStoreModule` (`{ graphStore, cache }`), `createPostgresFtsModule` (no `syncEndpoint`), thin `createPostgresModule` for Imp/tests. **No CacheSync / sync-fed FTS.** |
 | `packages/tome-imp-postgres` | `compileImpGraphToTomePostgresSql` — binder via `imp-sql` `compilePostgres` against projection mirrors |
 
 ## Cross-adapter uniformity (LCD, nice-to-have)
