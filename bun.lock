@@ -135,6 +135,18 @@
         "typescript": "5.8.2",
       },
     },
+    "../tome/packages/tome-interfaces": {
+      "name": "tome-interfaces",
+      "version": "0.6.0",
+      "dependencies": {
+        "tome-graph-interfaces": "workspace:^0.6.0",
+        "tome-service-interfaces": "workspace:^0.7.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.2.23",
+        "typescript": "5.8.2",
+      },
+    },
     "../tome/packages/tome-service-interfaces": {
       "name": "tome-service-interfaces",
       "version": "0.7.0",
@@ -177,6 +189,7 @@
         "pg": "^8.23.1",
         "tome-graph-interfaces": "workspace:*",
         "tome-imp-postgres": "workspace:*",
+        "tome-interfaces": "workspace:*",
         "tome-service-interfaces": "workspace:*",
         "tome-sql": "workspace:*",
       },
@@ -293,6 +306,8 @@
     "tome-graph-interfaces": ["tome-graph-interfaces@workspace:../tome/packages/tome-graph-interfaces"],
 
     "tome-imp-postgres": ["tome-imp-postgres@workspace:packages/tome-imp-postgres"],
+
+    "tome-interfaces": ["tome-interfaces@workspace:../tome/packages/tome-interfaces"],
 
     "tome-postgres": ["tome-postgres@workspace:packages/tome-postgres"],
 

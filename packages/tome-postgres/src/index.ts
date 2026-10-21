@@ -2,6 +2,12 @@ export { createPostgresModule } from "./module";
 export { openPostgresCache } from "./cache";
 export { openPostgresGraphStore } from "./graph-store";
 export {
+  openPostgresFtsSearch,
+  createPostgresFtsSearch,
+  buildPostgresTsQuery,
+  type OpenPostgresFtsSearchOptions,
+} from "./fts-search";
+export {
   resolvePostgresConnectionString,
   redactedPostgresPath,
   type PostgresConnectionOptions,

@@ -5,6 +5,7 @@
   "workspaces": [
     "packages/*",
     "../tome/packages/tome-graph-interfaces",
+    "../tome/packages/tome-interfaces",
     "../tome/packages/tome-service-interfaces",
     "../tome/packages/tome-sql",
     "../imp-ts/packages/*"

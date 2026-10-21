@@ -23,6 +23,34 @@ export async function ensureSchema(client: Client): Promise<void> {
     ALTER TABLE nodes ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 
+  // Same-DB FTS: generated tsvector over title/alias/body (idempotent add).
+  await client.query(`
+    DO $fts$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'nodes'
+          AND column_name = 'search_vector'
+      ) THEN
+        ALTER TABLE nodes ADD COLUMN search_vector tsvector
+          GENERATED ALWAYS AS (
+            to_tsvector(
+              'english',
+              coalesce(properties->>'title', '') || ' ' ||
+              coalesce(properties->>'alias', '') || ' ' ||
+              coalesce(body, '')
+            )
+          ) STORED;
+      END IF;
+    END
+    $fts$;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_nodes_search_vector
+      ON nodes USING GIN (search_vector);
+  `);
+
   await client.query(`
     CREATE TABLE IF NOT EXISTS relationship_records (
       id TEXT PRIMARY KEY,

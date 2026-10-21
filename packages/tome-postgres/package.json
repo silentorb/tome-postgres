@@ -15,6 +15,7 @@
     "pg": "^8.23.1",
     "tome-graph-interfaces": "workspace:*",
     "tome-imp-postgres": "workspace:*",
+    "tome-interfaces": "workspace:*",
     "tome-service-interfaces": "workspace:*",
     "tome-sql": "workspace:*"
   },
