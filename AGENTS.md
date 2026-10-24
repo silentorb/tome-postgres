@@ -44,6 +44,5 @@ Workbench (when mounted): `bash scripts/run-in-tome-postgres.sh run test` with `
 | Topic | Doc |
 | --- | --- |
 | Graph store contracts + adapter family | `tome` → `docs/features/graph-store.md` |
-| SQLite ↔ Postgres SoT family (inventory, target schema, LCD) | `tome` → `docs/features/sql-graph-store.md` |
 | Imp → SQL translator | `imp-ts` → `docs/features/sql.md` |
 | Backlog | `tome` → `tasks/postgresql-support.md` |
